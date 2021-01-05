@@ -1,4 +1,3 @@
-using System;
 using Xunit;
 
 namespace SharpMessaging.Core.Tests
@@ -8,7 +7,6 @@ namespace SharpMessaging.Core.Tests
         [Fact]
         public void Test1()
         {
-
         }
     }
 }
