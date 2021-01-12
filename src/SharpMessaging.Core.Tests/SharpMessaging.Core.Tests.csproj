@@ -15,4 +15,12 @@
     <PackageReference Include="coverlet.collector" Version="1.2.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\SharpMessaging.Core\SharpMessaging.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Networking\NewFolder\" />
+  </ItemGroup>
+
 </Project>

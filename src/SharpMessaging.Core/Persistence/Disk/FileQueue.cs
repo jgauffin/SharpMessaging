@@ -1,86 +1,151 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
-using System.Text;
+using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
-using Newtonsoft.Json;
 
 namespace SharpMessaging.Core.Persistence.Disk
 {
+    /// <summary>
+    ///     Facade for the queue files.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         Makes sure that a new file is created when the current is full and that the oldest file is deleted once we've
+    ///         dequeued the last entry from it.
+    ///     </para>
+    /// </remarks>
     public class FileQueue
     {
+        private readonly LinkedList<QueueFile> _files = new LinkedList<QueueFile>();
+        private readonly SemaphoreSlim _newMessageNotification = new SemaphoreSlim(0);
         private readonly string _queueDirectory;
         private readonly string _queueName;
-        private readonly QueueMetaFile _metaFile;
-        private FileStream _readStream;
-        private FileStream _writeStream;
 
         public FileQueue(string queueDirectory, string queueName)
         {
             _queueDirectory = queueDirectory ?? throw new ArgumentNullException(nameof(queueDirectory));
+            if (!Directory.Exists(_queueDirectory)) Directory.CreateDirectory(_queueDirectory);
+
             _queueName = queueName ?? throw new ArgumentNullException(nameof(queueName));
-            _metaFile = new QueueMetaFile(queueDirectory, queueName);
         }
 
-        public async Task<object> Dequeue()
+        /// <summary>
+        ///     Max number of bytes that a file can contain.
+        /// </summary>
+        /// <value>
+        ///     Default is 10MB.
+        /// </value>
+        public int MaxFileSize { get; set; } = 10000000;
+
+        /// <summary>
+        ///     Close all files.
+        /// </summary>
+        public void Close()
         {
-            var len = _readStream.ReadByte();
-            if (len == -1) return null;
+            foreach (var file in _files) file.Close();
 
-            var buffer = new byte[1000];
-            var bytesRead = await _readStream.ReadAsync(buffer, 0, len);
-            if (bytesRead != len)
-                throw new InvalidOperationException("Could not read a complete type name");
-
-            var typeName = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-            var typeToDeserialize = Type.GetType(typeName, true);
-
-            var dataLengthBuffer = new byte[2];
-            bytesRead = _readStream.Read(dataLengthBuffer, 0, dataLengthBuffer.Length);
-            var dataLength = (int)BitConverter.ToUInt16(dataLengthBuffer, 0);
-
-            var jsonBuffer = new byte[dataLength];
-            bytesRead = await _readStream.ReadAsync(jsonBuffer, 0, dataLength);
-            if (bytesRead != dataLength)
-                throw new InvalidOperationException("Failed to read JSON document");
-
-            await _metaFile.WriteNextRecordPosition((int)_readStream.Position);
-            var json = Encoding.UTF8.GetString(jsonBuffer, 0, bytesRead);
-            return JsonConvert.DeserializeObject(json, typeToDeserialize);
+            _files.Clear();
         }
 
+        /// <summary>
+        ///     Dequeue a new entry.
+        /// </summary>
+        /// <param name="maxWaitTime">
+        ///     Amount of time to wait if the queue do not contain any entries. Use <c>TimeSpan.Zero</c> to
+        ///     return directly if the queue is empty.
+        /// </param>
+        /// <returns>Entry if found; otherwise <c>null</c>.</returns>
+        public async Task<DequeuedMessage> Dequeue(TimeSpan maxWaitTime)
+        {
+            if (!await _newMessageNotification.WaitAsync(maxWaitTime))
+                return null;
 
+            var queueFile = _files.First.Value;
+            var msg = await queueFile.Dequeue();
+            if (msg != null)
+            {
+                msg.EnlistAbort(() =>
+                {
+                    _newMessageNotification.Release();
+                    return Task.CompletedTask;
+                });
+                return msg;
+            }
+
+            if (_files.Count == 1)
+                return null;
+
+            _files.RemoveFirst();
+            queueFile.Close();
+            queueFile.Delete();
+
+            queueFile = _files.First.Value;
+            return await queueFile.Dequeue();
+        }
+
+        /// <summary>
+        /// Enqueue a new entry.
+        /// </summary>
+        /// <param name="message">Entry to enqueue</param>
+        /// <returns></returns>
         public async Task Enqueue(object message)
         {
-            /*TypeNameLength (byte)
- TypeName
- DataLength (short)
- Data
- 
- */
-            var name = message.GetType().AssemblyQualifiedName;
-            var bytes = Encoding.UTF8.GetBytes(name);
-            _writeStream.WriteByte((byte)bytes.Length);
-            _writeStream.Write(bytes, 0, bytes.Length);
+            if (message == null) throw new ArgumentNullException(nameof(message));
 
-            var json = JsonConvert.SerializeObject(message);
-            bytes = Encoding.UTF8.GetBytes(json);
-            var lengthBuffer = BitConverter.GetBytes((short)bytes.Length);
-            await _writeStream.WriteAsync(lengthBuffer, 0, lengthBuffer.Length);
-            await _writeStream.WriteAsync(bytes, 0, bytes.Length);
-            await _writeStream.FlushAsync();
+            var queueFile = _files.Last.Value;
+            await queueFile.Enqueue(message);
+
+            if (queueFile.FileSize > MaxFileSize)
+            {
+                var newFile = await CreateNewFile();
+                _files.AddLast(newFile);
+            }
+
+            _newMessageNotification.Release();
         }
 
+        /// <summary>
+        /// Open queue and all its files.
+        /// </summary>
+        /// <returns>Task when completed.</returns>
         public async Task Open()
         {
-            if (!Directory.Exists(_queueDirectory))
-                Directory.CreateDirectory(_queueDirectory);
+            var fileNames = Directory.GetFiles(_queueDirectory, _queueName + "_*.data")
+                .OrderBy(x => x);
+            foreach (var fileName in fileNames)
+            {
+                var file = new QueueFile(_queueDirectory, fileName);
+                await file.Open();
+                _files.AddLast(file);
+            }
 
-            var file = Path.Combine(_queueDirectory, _queueName + ".data");
-            _writeStream = new FileStream(file, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
-            _readStream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            if (_files.Count == 0)
+            {
+                var newFile = await CreateNewFile();
+                _files.AddLast(newFile);
+            }
 
-            await _metaFile.Open();
-            _readStream.Position = _metaFile.NextRecordPosition;
+            var count = _files.Sum(x => x.RecordCount);
+            if (count > 0) _newMessageNotification.Release(count);
+        }
+
+        private async Task<QueueFile> CreateNewFile()
+        {
+            var counter = 0;
+            var fileName = $"{_queueName}_{DateTime.UtcNow:MMddHHmmss}-{counter:00}.data";
+
+            //guard against many files being creating at the same second.
+            while (File.Exists(Path.Combine(_queueDirectory, fileName)))
+            {
+                counter++;
+                fileName = $"{_queueName}_{DateTime.UtcNow:MMddHHmmss}-{counter:00}.data";
+            }
+
+            var file = new QueueFile(_queueDirectory, fileName);
+            await file.Open();
+            return file;
         }
     }
 }
