@@ -86,7 +86,7 @@ namespace SharpMessaging.Core.Persistence.Disk
         }
 
         /// <summary>
-        /// Enqueue a new entry.
+        ///     Enqueue a new entry.
         /// </summary>
         /// <param name="message">Entry to enqueue</param>
         /// <returns></returns>
@@ -107,7 +107,7 @@ namespace SharpMessaging.Core.Persistence.Disk
         }
 
         /// <summary>
-        /// Open queue and all its files.
+        ///     Open queue and all its files.
         /// </summary>
         /// <returns>Task when completed.</returns>
         public async Task Open()

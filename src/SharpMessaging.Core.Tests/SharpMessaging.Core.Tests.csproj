@@ -19,8 +19,4 @@
     <ProjectReference Include="..\SharpMessaging.Core\SharpMessaging.Core.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Networking\NewFolder\" />
-  </ItemGroup>
-
 </Project>

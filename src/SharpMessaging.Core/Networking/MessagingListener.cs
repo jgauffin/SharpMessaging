@@ -10,15 +10,16 @@ namespace SharpMessaging.Core.Networking
     public class MessagingListener
     {
         private readonly int _listenerPort;
-        private TcpListener _tcpListener;
-        LinkedList<MessagingListenerClient> _clients = new LinkedList<MessagingListenerClient>();
-        private IMessageHandlerInvoker _messageHandlerInvoker;
+        private readonly LinkedList<MessagingListenerClient> _clients = new LinkedList<MessagingListenerClient>();
+        private readonly IMessageHandlerInvoker _messageHandlerInvoker;
+        private readonly TcpListener _tcpListener;
 
         public MessagingListener(int listenerPort, IMessageHandlerInvoker messageHandlerInvoker)
         {
             if (listenerPort < 0) throw new ArgumentOutOfRangeException(nameof(listenerPort));
             _listenerPort = listenerPort;
-            _messageHandlerInvoker = messageHandlerInvoker ?? throw new ArgumentNullException(nameof(messageHandlerInvoker));
+            _messageHandlerInvoker =
+                messageHandlerInvoker ?? throw new ArgumentNullException(nameof(messageHandlerInvoker));
             _tcpListener = new TcpListener(IPAddress.Any, listenerPort);
         }
 
@@ -30,7 +31,7 @@ namespace SharpMessaging.Core.Networking
                 var socket = await _tcpListener.AcceptSocketAsync();
                 var newClient = new MessagingListenerClient(socket, _messageHandlerInvoker);
 #pragma warning disable 4014
-                newClient.Run(token).ContinueWith(x=> OnClientDisconnected(x, newClient));
+                newClient.Run(token).ContinueWith(x => OnClientDisconnected(x, newClient));
 #pragma warning restore 4014
 
                 lock (_clients)
@@ -38,7 +39,6 @@ namespace SharpMessaging.Core.Networking
                     _clients.AddLast(newClient);
                 }
             }
-            
         }
 
         private void OnClientDisconnected(Task obj, MessagingListenerClient client)

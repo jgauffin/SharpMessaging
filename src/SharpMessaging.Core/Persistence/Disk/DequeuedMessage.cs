@@ -6,8 +6,8 @@ namespace SharpMessaging.Core.Persistence.Disk
 {
     public class DequeuedMessage
     {
-        private readonly Func<Task> _completionTask;
         private readonly LinkedList<Func<Task>> _abortTasks = new LinkedList<Func<Task>>();
+        private readonly Func<Task> _completionTask;
 
         public DequeuedMessage(object message, Func<Task> completionTask, Func<Task> abortTask)
         {
@@ -18,11 +18,6 @@ namespace SharpMessaging.Core.Persistence.Disk
         }
 
         public object Message { get; }
-
-        public async Task Complete()
-        {
-            await _completionTask();
-        }
 
         public async Task Abort()
         {
@@ -38,6 +33,11 @@ namespace SharpMessaging.Core.Persistence.Disk
                     //without breaking the entire system down.
                 }
             }
+        }
+
+        public async Task Complete()
+        {
+            await _completionTask();
         }
 
         internal void EnlistAbort(Func<Task> action)

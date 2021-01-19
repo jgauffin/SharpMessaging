@@ -2,7 +2,6 @@
 using System.Threading;
 using System.Threading.Tasks;
 using SharpMessaging.Core.Networking;
-using SharpMessaging.Core.Persistence.Disk;
 
 namespace SharpMessaging.Core
 {
@@ -16,6 +15,24 @@ namespace SharpMessaging.Core
             _serviceProvider = serviceProvider;
         }
 
+        public async Task HandleAsync(object messageToProcess)
+        {
+            var handlerType = typeof(IMessageHandler<>).MakeGenericType(messageToProcess.GetType());
+            var instance = _serviceProvider.GetService(handlerType);
+            if (instance == null)
+                return;
+
+            var method = instance.GetType().GetMethod("Handle",
+                new[] {typeof(MessageHandlerContext), messageToProcess.GetType()});
+            if (method == null)
+                throw new InvalidOperationException(
+                    $"Opps, did not find method 'Handle' in type '{instance.GetType()}'.");
+
+            var context = new MessageHandlerContext();
+            var task = (Task)method.Invoke(instance, new[] {context, messageToProcess});
+            await task;
+        }
+
         //public MessagingService(IServiceProvider serviceProvider, QueueFile fileQueue)
         //{
         //    _serviceProvider = serviceProvider;
@@ -26,24 +43,6 @@ namespace SharpMessaging.Core
         {
             _messagingListener = new MessagingListener(config.ListenerPort, this);
             await _messagingListener.Run(token);
-        }
-
-        public async Task HandleAsync(object messageToProcess)
-        {
-            var handlerType = typeof(IMessageHandler<>).MakeGenericType(messageToProcess.GetType());
-            var instance = _serviceProvider.GetService(handlerType);
-            if (instance == null)
-                return;
-
-            var method = instance.GetType().GetMethod("Handle",
-                new[] { typeof(MessageHandlerContext), messageToProcess.GetType() });
-            if (method == null)
-                throw new InvalidOperationException(
-                    $"Opps, did not find method 'Handle' in type '{instance.GetType()}'.");
-
-            var context = new MessageHandlerContext();
-            var task = (Task)method.Invoke(instance, new[] { context, messageToProcess });
-            await task;
         }
     }
 }

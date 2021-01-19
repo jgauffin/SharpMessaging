@@ -29,6 +29,11 @@ namespace SharpMessaging.Core.Persistence.Disk
         /// </summary>
         public int NextRecordPosition { get; private set; }
 
+        public void Close()
+        {
+            _stream.Close();
+        }
+
         /// <summary>
         ///     Open file to find next record to read.
         /// </summary>
@@ -49,11 +54,6 @@ namespace SharpMessaging.Core.Persistence.Disk
             _stream.Position = 0;
             await _stream.WriteAsync(buffer, 0, buffer.Length);
             await _stream.FlushAsync();
-        }
-
-        public void Close()
-        {
-            _stream.Close();
         }
     }
 }

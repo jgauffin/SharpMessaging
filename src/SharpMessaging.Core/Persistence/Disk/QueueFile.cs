@@ -11,12 +11,12 @@ namespace SharpMessaging.Core.Persistence.Disk
     /// </summary>
     public class QueueFile
     {
+        private readonly string _fileName;
         private readonly QueueMetaFile _metaFile;
         private readonly string _queueDirectory;
-        private readonly string _fileName;
+        private string _fullPath;
         private FileStream _readStream;
         private FileStream _writeStream;
-        private string _fullPath;
 
         public QueueFile(string queueDirectory, string fileName)
         {
@@ -40,6 +40,11 @@ namespace SharpMessaging.Core.Persistence.Disk
             _readStream.Close();
             _writeStream.Close();
             _metaFile.Close();
+        }
+
+        public void Delete()
+        {
+            File.Delete(_fullPath);
         }
 
 
@@ -67,7 +72,7 @@ namespace SharpMessaging.Core.Persistence.Disk
                 throw new InvalidOperationException("Failed to read JSON document");
 
             var json = Encoding.UTF8.GetString(jsonBuffer, 0, bytesRead);
-            var body= JsonConvert.DeserializeObject(json, typeToDeserialize);
+            var body = JsonConvert.DeserializeObject(json, typeToDeserialize);
             return new DequeuedMessage(body, async () =>
             {
                 await _metaFile.WriteNextRecordPosition((int)_readStream.Position);
@@ -134,11 +139,6 @@ namespace SharpMessaging.Core.Persistence.Disk
                 _readStream.Position += dataLength;
                 RecordCount++;
             }
-        }
-
-        public void Delete()
-        {
-            File.Delete(_fullPath);
         }
     }
 }

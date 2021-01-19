@@ -1,9 +1,7 @@
 ﻿using System;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
 using System.Threading.Tasks;
-using Newtonsoft.Json;
 using SharpMessaging.Core.Networking.Helpers;
 
 namespace SharpMessaging.Core.Networking
@@ -15,14 +13,18 @@ namespace SharpMessaging.Core.Networking
     {
         private readonly SocketAsyncEventArgs _writeArgs;
         private readonly SocketAwaitable _writeAwaitable;
+        private readonly TransportProtocol _protocol;
         private string _remoteHost;
         private int _remotePort;
+        private SockerSender _sender;
+        private readonly ITransportSerializer _serializer = new JsonTransportSerializer();
         private Socket _socket;
 
         public TcpMessagingClient()
         {
             _writeArgs = new SocketAsyncEventArgs();
             _writeAwaitable = new SocketAwaitable(_writeArgs);
+            _protocol = new TransportProtocol(_serializer);
         }
 
         /// <summary>
@@ -53,20 +55,8 @@ namespace SharpMessaging.Core.Networking
         {
             if (message == null) throw new ArgumentNullException(nameof(message));
 
-            var msg = new TransportMessage(message);
-            var settings = new JsonSerializerSettings
-            {
-                TypeNameHandling = TypeNameHandling.Objects
-            };
-            var msgJson = JsonConvert.SerializeObject(msg, settings);
-            var bytes = Encoding.UTF8.GetBytes(msgJson);
-
-            var lengthBuffer = BitConverter.GetBytes(bytes.Length);
-            _writeArgs.SetBuffer(lengthBuffer, 0, lengthBuffer.Length);
-            await _socket.SendAsync(_writeAwaitable);
-
-            _writeArgs.SetBuffer(bytes, 0, bytes.Length);
-            await _socket.SendAsync(_writeAwaitable);
+            var transportMessage = new TransportMessage(message);
+            await _protocol.Send(_sender, transportMessage);
         }
 
         protected async Task Connect()
@@ -79,6 +69,8 @@ namespace SharpMessaging.Core.Networking
 
             _writeAwaitable.Reset();
             await _writeAwaitable;
+
+            _sender = new SockerSender(_socket, _writeArgs, _writeAwaitable);
         }
     }
 }

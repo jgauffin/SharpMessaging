@@ -1,22 +1,16 @@
 ﻿using System;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
 using System.Threading.Tasks;
 using FluentAssertions;
-using Newtonsoft.Json;
 using SharpMessaging.Core.Networking;
+using SharpMessaging.Core.Networking.Helpers;
 using Xunit;
 
 namespace SharpMessaging.Core.Tests.Networking
 {
     public class TcpMessagingChannelTests : IDisposable
     {
-        private readonly TcpListener _listener;
-        private Socket _serverSocket;
-        private readonly int _serverPort;
-        private readonly IAsyncResult _serverListenResult;
-
         public TcpMessagingChannelTests()
         {
             _listener = new TcpListener(IPAddress.Any, 0);
@@ -27,41 +21,26 @@ namespace SharpMessaging.Core.Tests.Networking
 
         public void Dispose()
         {
-            if (_serverSocket != null)
-                _serverSocket.Dispose();
+            _serverSocket?.Dispose();
 
             _listener.Stop();
         }
 
-        private TransportMessage ReceiveMessageInServer()
+        private readonly TcpListener _listener;
+        private Socket _serverSocket;
+        private readonly int _serverPort;
+        private readonly IAsyncResult _serverListenResult;
+
+        private async Task<TransportMessage> ReceiveMessageInServer()
         {
             if (_serverSocket == null) _serverSocket = _listener.EndAcceptSocket(_serverListenResult);
 
             var buffer = new byte[65535];
-            var bytes = _serverSocket.Receive(buffer, 0, 4, SocketFlags.None);
-            if (bytes != 4)
-                throw new InvalidOperationException("Failed to receive header.");
-
-            var dataLength = BitConverter.ToInt32(buffer, 0);
-            if (buffer.Length < dataLength)
-                buffer = new byte[dataLength];
-
-            var bytesLeft = dataLength;
-            var offset = 0;
-            while (bytesLeft > 0)
-            {
-                var read = _serverSocket.Receive(buffer, offset, bytesLeft, SocketFlags.None);
-                bytesLeft -= read;
-                offset += read;
-            }
-
-            var json = Encoding.UTF8.GetString(buffer, 0, dataLength);
-            var settings = new JsonSerializerSettings
-            {
-                TypeNameHandling = TypeNameHandling.Objects
-            };
-            var transportMessage = JsonConvert.DeserializeObject<TransportMessage>(json, settings);
-            return transportMessage;
+            var args = new SocketAsyncEventArgs();
+            var awaitable = new SocketAwaitable(args);
+            var receiver = new DataReceiver(_serverSocket, args, awaitable, buffer);
+            var protocol = new TransportProtocol(new JsonTransportSerializer());
+            return await protocol.ParseMessage(receiver);
         }
 
         [Fact]
@@ -80,7 +59,7 @@ namespace SharpMessaging.Core.Tests.Networking
 
             await sut.SendAsync("Hello world");
 
-            var message = ReceiveMessageInServer();
+            var message = await ReceiveMessageInServer();
             message.Body.Should().Be("Hello world");
         }
     }

@@ -1,7 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Text;
 using System.Threading.Tasks;
 using FluentAssertions;
 using SharpMessaging.Core.Persistence.Disk;
@@ -11,15 +9,21 @@ namespace SharpMessaging.Core.Tests.Persistence.Disk
 {
     public class QueueFileTests : IDisposable
     {
-        private readonly string _directory;
-        private QueueFile _sut;
-
         public QueueFileTests()
         {
             _directory = Path.Combine(Path.GetTempPath(), Path.GetFileNameWithoutExtension(Path.GetTempFileName()));
             Directory.CreateDirectory(_directory);
             _sut = new QueueFile(_directory, "Test");
         }
+
+        public void Dispose()
+        {
+            _sut.Close();
+            Directory.Delete(_directory, true);
+        }
+
+        private readonly string _directory;
+        private readonly QueueFile _sut;
 
         [Fact]
         public async Task Should_be_able_to_store_and_read_record()
@@ -33,16 +37,16 @@ namespace SharpMessaging.Core.Tests.Persistence.Disk
         }
 
         [Fact]
-        public async Task Should_return_message_when_aborting()
+        public async Task Should_count_records_correctly_when_reopening()
         {
             await _sut.Open();
 
             await _sut.Enqueue("Hello world");
-            var msg = await _sut.Dequeue();
-            await msg.Abort();
-            msg = await _sut.Dequeue();
+            await _sut.Enqueue("Hello world2");
+            _sut.Close();
+            await _sut.Open();
 
-            msg.Message.Should().Be("Hello world");
+            _sut.RecordCount.Should().Be(2);
         }
 
         [Fact]
@@ -93,22 +97,16 @@ namespace SharpMessaging.Core.Tests.Persistence.Disk
         }
 
         [Fact]
-        public async Task Should_count_records_correctly_when_reopening()
+        public async Task Should_return_message_when_aborting()
         {
             await _sut.Open();
 
             await _sut.Enqueue("Hello world");
-            await _sut.Enqueue("Hello world2");
-            _sut.Close();
-            await _sut.Open();
+            var msg = await _sut.Dequeue();
+            await msg.Abort();
+            msg = await _sut.Dequeue();
 
-            _sut.RecordCount.Should().Be(2);
-        }
-
-        public void Dispose()
-        {
-            _sut.Close();
-            Directory.Delete(_directory, true);
+            msg.Message.Should().Be("Hello world");
         }
     }
 }

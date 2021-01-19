@@ -7,14 +7,13 @@ using System.Threading.Tasks;
 namespace SharpMessaging.Core.Networking.Helpers
 {
     /// <summary>
-    /// Allows us to use async Task for socket operations.
+    ///     Allows us to use async Task for socket operations.
     /// </summary>
     public sealed class SocketAwaitable : INotifyCompletion
     {
         private static readonly Action Sentinel = () => { };
-        private Action _continuation;
         internal readonly SocketAsyncEventArgs _eventArgs;
-        private bool _wasCompleted;
+        private Action _continuation;
 
         public SocketAwaitable(SocketAsyncEventArgs eventArgs)
         {
@@ -22,12 +21,12 @@ namespace SharpMessaging.Core.Networking.Helpers
             eventArgs.Completed += delegate
             {
                 var prev = _continuation ?? Interlocked.CompareExchange(
-                               ref _continuation, Sentinel, null);
+                    ref _continuation, Sentinel, null);
                 prev?.Invoke();
             };
         }
 
-        public bool IsCompleted => _wasCompleted;
+        public bool IsCompleted { get; private set; }
 
         public void OnCompleted(Action continuation)
         {
@@ -35,12 +34,6 @@ namespace SharpMessaging.Core.Networking.Helpers
                 Interlocked.CompareExchange(
                     ref _continuation, continuation, null) == Sentinel)
                 Task.Run(continuation);
-        }
-
-        internal void Reset()
-        {
-            _wasCompleted = false;
-            _continuation = null;
         }
 
         public SocketAwaitable GetAwaiter()
@@ -51,7 +44,13 @@ namespace SharpMessaging.Core.Networking.Helpers
         public void GetResult()
         {
             if (_eventArgs.SocketError != SocketError.Success)
-                throw new SocketException((int) _eventArgs.SocketError);
+                throw new SocketException((int)_eventArgs.SocketError);
+        }
+
+        internal void Reset()
+        {
+            IsCompleted = false;
+            _continuation = null;
         }
     }
 }

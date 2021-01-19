@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Text;
 
 namespace SharpMessaging.Core.Networking
 {
@@ -11,7 +10,11 @@ namespace SharpMessaging.Core.Networking
             Body = body ?? throw new ArgumentNullException(nameof(body));
         }
 
-        public IDictionary<string,string> Headers { get; set; }
         public object Body { get; set; }
+        public Guid CorrelationId { get; set; }
+
+        public IDictionary<string, string> Headers { get; set; } = new Dictionary<string, string>();
+
+        public Guid Id { get; set; }
     }
 }

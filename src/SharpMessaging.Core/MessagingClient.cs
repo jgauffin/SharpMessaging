@@ -19,6 +19,21 @@ namespace SharpMessaging.Core
             _tcpClient = new TcpMessagingClient();
         }
 
+        public async Task Send(object message)
+        {
+            if (message == null) throw new ArgumentNullException(nameof(message));
+            await _fileQueue.Enqueue(message);
+        }
+
+        public async Task Start()
+        {
+            await _fileQueue.Open();
+            await _tcpClient.Open(_configuration.RemoteEndPointHostName, 8335);
+#pragma warning disable 4014
+            DeliverQueuedMessages();
+#pragma warning restore 4014
+        }
+
         private async Task DeliverQueuedMessages()
         {
             while (true)
@@ -48,21 +63,6 @@ namespace SharpMessaging.Core
                     throw;
                 }
             }
-        }
-
-        public async Task Send(object message)
-        {
-            if (message == null) throw new ArgumentNullException(nameof(message));
-            await _fileQueue.Enqueue(message);
-        }
-
-        public async Task Start()
-        {
-            await _fileQueue.Open();
-            await _tcpClient.Open(_configuration.RemoteEndPointHostName, 8335);
-#pragma warning disable 4014
-            DeliverQueuedMessages();
-#pragma warning restore 4014
         }
     }
 }
