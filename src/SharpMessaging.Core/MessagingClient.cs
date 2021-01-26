@@ -2,6 +2,7 @@
 using System.Net.Sockets;
 using System.Threading.Tasks;
 using SharpMessaging.Core.Networking;
+using SharpMessaging.Core.Networking.Messages;
 using SharpMessaging.Core.Persistence.Disk;
 
 namespace SharpMessaging.Core
@@ -11,6 +12,10 @@ namespace SharpMessaging.Core
         private readonly MessagingClientConfiguration _configuration;
         private readonly FileQueue _fileQueue;
         private readonly TcpMessagingClient _tcpClient;
+        private byte[] _readBuffer = new byte[65535];
+        private DequeuedMessage _pendingMessage;
+        private Guid _pendingMessageId;
+
 
         public MessagingClient(MessagingClientConfiguration configuration)
         {
@@ -29,9 +34,30 @@ namespace SharpMessaging.Core
         {
             await _fileQueue.Open();
             await _tcpClient.Open(_configuration.RemoteEndPointHostName, 8335);
+            _tcpClient.SetReceiver(ProcessReceivedMessage);
 #pragma warning disable 4014
             DeliverQueuedMessages();
 #pragma warning restore 4014
+        }
+
+        private async Task ProcessReceivedMessage(object message)
+        {
+            if (message is Ack ack)
+            {
+                if (_pendingMessageId != ack.MessageId)
+                    throw new InvalidOperationException("We screwed up.");
+
+                await _pendingMessage.Complete();
+                _pendingMessage = null;
+            }
+            else if (message is Nak nak)
+            {
+                if (_pendingMessageId != nak.MessageId)
+                    throw new InvalidOperationException("We screwed up.");
+
+                await _pendingMessage.Abort();
+                _pendingMessage = null;
+            }
         }
 
         private async Task DeliverQueuedMessages()
@@ -49,17 +75,20 @@ namespace SharpMessaging.Core
                 }
 
 
-                var msg = await _fileQueue.Dequeue(TimeSpan.FromSeconds(10));
-                if (msg == null) continue;
+                _pendingMessage = await _fileQueue.Dequeue(TimeSpan.FromSeconds(10));
+                if (_pendingMessage == null) continue;
 
                 try
                 {
-                    await _tcpClient.SendAsync(msg.Message);
-                    await msg.Complete();
+                    var transportMessage = new TransportMessage(_pendingMessage.Message);
+                    _pendingMessageId = transportMessage.Id;
+                    await _tcpClient.SendAsync(transportMessage);
+                    await Task.Delay(600000);
                 }
                 catch
                 {
-                    await msg.Abort();
+                    await _pendingMessage.Abort();
+                    _pendingMessage = null;
                     throw;
                 }
             }

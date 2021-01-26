@@ -4,6 +4,8 @@ using System.Threading.Tasks;
 using FluentAssertions;
 using NSubstitute;
 using SharpMessaging.Core.Networking;
+using SharpMessaging.Core.Networking.Messages;
+using SharpMessaging.Core.Networking.SimpleProtocol;
 using SharpMessaging.Core.Tests.Networking.Helpers;
 using Xunit;
 
@@ -58,8 +60,8 @@ namespace SharpMessaging.Core.Tests.Networking
             var sender = Substitute.For<ISendState>();
             var msg = new TransportMessage("Hello world");
 
-            var sut = new TransportProtocol(serialiser);
-            await sut.Send(sender, msg);
+            var sut = new SimpleProtocolEncoder(serialiser);
+            await sut.EncodeMessage(sender, msg);
 
             var headerCall = sender.ReceivedCalls().First().GetArguments();
             var bodyCall = sender.ReceivedCalls().Last().GetArguments();
@@ -67,8 +69,10 @@ namespace SharpMessaging.Core.Tests.Networking
             var receiveState = new TestReceiveState();
             receiveState.AddBuffer(headerCall[0].As<byte[]>(), 0, headerCall[2].As<int>());
             receiveState.AddBuffer(bodyCall[0].As<byte[]>(), 0, bodyCall[2].As<int>());
-            var actual = await sut.ParseMessage(receiveState);
-            actual.Body.Should().Be("Hello world");
+            var decoder = new SimpleProtocolDecoder(serialiser);
+            var actual = await decoder.Decode(receiveState);
+            var actualMessage = actual as TransportMessage;
+            actualMessage.Body.Should().Be("Hello world");
         }
 
         [Fact]
@@ -78,8 +82,8 @@ namespace SharpMessaging.Core.Tests.Networking
             var sender = Substitute.For<ISendState>();
             var msg = new TransportMessage("Hello world");
 
-            var sut = new TransportProtocol(serialiser);
-            await sut.Send(sender, msg);
+            var sut = new SimpleProtocolEncoder(serialiser);
+            await sut.EncodeMessage(sender, msg);
 
             var args = sender.ReceivedCalls().First().GetArguments();
             var headerBytes = args[0].As<byte[]>();

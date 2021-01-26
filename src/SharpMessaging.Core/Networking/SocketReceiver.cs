@@ -5,13 +5,13 @@ using SharpMessaging.Core.Networking.Helpers;
 
 namespace SharpMessaging.Core.Networking
 {
-    public class DataReceiver : IReceiveState
+    public class SocketReceiver : IReceiveState
     {
         private readonly SocketAsyncEventArgs _readArgs;
         private readonly SocketAwaitable _readAwaitable;
         private readonly Socket _socket;
 
-        public DataReceiver(Socket socket, SocketAsyncEventArgs readArgs, SocketAwaitable readAwaitable, byte[] buffer)
+        public SocketReceiver(Socket socket, SocketAsyncEventArgs readArgs, SocketAwaitable readAwaitable, byte[] buffer)
         {
             _socket = socket;
             _readArgs = readArgs;
@@ -33,7 +33,7 @@ namespace SharpMessaging.Core.Networking
 
         public async Task EnsureEnoughData(int amountOfBytesToGuarantee)
         {
-            if (BytesLeftInBuffer > amountOfBytesToGuarantee)
+            if (BytesLeftInBuffer >= amountOfBytesToGuarantee)
                 return;
 
             var bytesReceived = 0;

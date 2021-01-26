@@ -8,6 +8,7 @@ namespace SharpMessaging.LabApp
     {
         public Task Handle(MessageHandlerContext context, MyMessage message)
         {
+            
             Console.WriteLine("We got called!");
             return Task.CompletedTask;
         }

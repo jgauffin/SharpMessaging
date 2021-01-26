@@ -1,12 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace SharpMessaging.Core.Networking
+namespace SharpMessaging.Core.Networking.Messages
 {
     public class TransportMessage
     {
         public TransportMessage(object body)
         {
+            Id = Guid.NewGuid();
             Body = body ?? throw new ArgumentNullException(nameof(body));
         }
 
